@@ -1,15 +1,31 @@
 # AWS EBS Volume Optimization Methodology
 
+> **Portfolio Note**: This repository documents the systematic methodology I created and successfully applied in production. For the actual implementation (shell scripts, campaign report, and 729 deletion execution details), see the [finops-ebs-cleanup repository](https://github.com/FolarinOyenuga/finops-ebs-cleanup).
+>
+> **Blog Post**: [How Systematic EBS Optimization Delivered £108K in Annual Savings](link-when-published)
+
 A systematic 7-step verification framework for safely identifying and removing orphaned EBS volumes in production AWS environments, preventing false positives while enabling confident cost optimization at scale.
 
 ## Impact
 
-When applied in production environments managing 1000+ EBS volumes:
-- **£108,069 annual cost savings** (verified via AWS Cost Explorer)
-- **Zero false positives** - no production incidents from incorrect deletions
-- **50.9 TB storage reclaimed** across 732 orphaned volumes
-- **Adopted by multiple teams** for their own optimization initiatives
-- **Estimated £50-100K additional organizational savings** from methodology reuse
+### Real-World Production Results
+
+When I applied this methodology in a UK government production environment managing 1,000+ EBS volumes:
+
+**My Direct Campaign (live-1 cluster)**:
+- **£62,829 annual savings** (verified via AWS Cost Explorer)
+- **729 volumes deleted** with 100% success rate (0 incidents)
+- **48.65 TB storage reclaimed**
+- **12 phased batches** over 5 weeks (Oct-Nov 2025)
+
+**Methodology Adoption (live-2 cluster)**:
+- Colleague applied this framework to identify over-provisioned io1 volumes
+- **£45,241 additional annual savings** from just 3 volumes
+- Demonstrates force multiplication through reusable methodology
+
+**Combined Organizational Impact**: **£108,070 annually**
+
+**Actual Implementation**: See [finops-ebs-cleanup](https://github.com/FolarinOyenuga/finops-ebs-cleanup) for complete scripts, campaign report, and execution details *(work GitHub account)*.
 
 ## The Problem
 
@@ -181,14 +197,38 @@ iops_monthly = provisioned_iops * £0.071
 
 **Document all calculations** to enable verification by finance/leadership teams.
 
-## Adoption by Other Teams
+## Cost Driver Analysis: The £15K io1 Volume
 
-This methodology has been adopted across multiple infrastructure teams:
+During my campaign, one volume stood out as the single largest cost contributor:
 
-**Modernisation Platform:**
-- Applied framework to their AWS accounts
-- Estimated £50-100K additional annual savings
-- Created automated pipeline based on manual process
+**750GB io1 volume with 19,500 provisioned IOPS**
+
+**Annual cost breakdown**:
+- IOPS cost: £14,067 (93% of total)
+- Storage cost: £1,013 (7% of total)
+- **Total annual cost**: £15,080
+
+**Key insight**: The IOPS cost was **13.6× more expensive** than the storage itself.
+
+This single orphaned volume represented **24% of my entire campaign savings**. It had been provisioned for high-throughput workloads that no longer existed, but the IOPS allocation persisted, silently draining budget.
+
+**Lesson**: Always check io1/io2 IOPS utilization. Over-provisioned IOPS is often the most expensive form of cloud waste—and the easiest to overlook during cleanup campaigns.
+
+This discovery directly led to the live-2 cluster optimization where my colleague found 3 similar over-provisioned volumes worth £45K annually.
+
+## Methodology Adoption
+
+**live-2 Cluster Optimization** (Colleague):
+- Applied this 7-step framework to identify over-provisioned volumes
+- Found 3×750GB io1 volumes with excessive IOPS (19,500 each)
+- **Result**: £45,241 annual savings from just 3 volumes
+
+**Modernisation Platform Team**:
+- Built automation tooling based on this verification framework
+- Now using as standard operating procedure for EBS cleanup
+- Specific savings from their implementation not yet quantified
+
+This demonstrates the methodology's reusability—others can apply it to their AWS environments without my direct involvement.
 
 **Key success factors for adoption:**
 1. **Clear documentation** - Each step explained with rationale
@@ -233,6 +273,17 @@ MIT License - Use freely, attribution appreciated.
 
 ---
 
-**Author:** Folarin Oyenuga  
-**Portfolio:** [LinkedIn](https://www.linkedin.com/in/folarin-o-46389b128/)  
-**Contact:** folarinoyenuga200@gmail.com
+## Related Resources
+
+**Actual Implementation**: [finops-ebs-cleanup](https://github.com/FolarinOyenuga/finops-ebs-cleanup) - Complete shell scripts, phased deletion batches, and detailed campaign report *(work account)*
+
+**Blog Post**: [How Systematic EBS Optimization Delivered £108K](link-when-published) - Full story with lessons learned
+
+**Author**: Folarin Oyenuga  
+**LinkedIn**: [folarin-o-46389b128](https://www.linkedin.com/in/folarin-o-46389b128/)  
+**GitHub**: [github.com/olu-folarin](https://github.com/olu-folarin)  
+**Email**: folarinoyenuga200@gmail.com
+
+---
+
+**Note**: This methodology repository lives on my personal GitHub. The actual production implementation (with scripts and campaign report) is in my work GitHub account as it was employer work. Both are publicly available.
