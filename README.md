@@ -248,4 +248,4 @@ Questions? Open an issue or reach out via GitHub.
 
 ---
 
-**License:** MIT (adapt freely for your organization)
+**License:** [CC-BY-4.0](LICENSE) (adapt freely, attribution required)
