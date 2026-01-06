@@ -248,4 +248,20 @@ Questions? Open an issue or reach out via GitHub.
 
 ---
 
-**License:** [CC-BY-4.0](LICENSE) (adapt freely, attribution required)
+## License
+
+This work is licensed under [Creative Commons Attribution 4.0 International (CC BY 4.0)](https://creativecommons.org/licenses/by/4.0/).
+
+**You are free to:**
+- Share and adapt this material for any purpose, including commercial use
+
+**Under the following terms:**
+- **Attribution** — Credit the original work and indicate if changes were made
+
+**How to cite:**
+```
+Oyenuga, F. (2025). AWS EBS Optimisation Methodology.
+GitHub: https://github.com/olu-folarin/aws-ebs-optimization-methodology-
+```
+
+Full license: https://creativecommons.org/licenses/by/4.0/legalcode
