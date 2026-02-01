@@ -250,6 +250,9 @@ Once you trust the methodology, bake it into your processes. Manual verification
 
 ## Resources
 
+**Blog Post:**
+[How Systematic EBS Optimization Delivered Significant Annual Savings](https://dev.to/olufolarin/how-systematic-ebs-optimization-delivered-significant-annual-savings-a3h)
+
 **AWS EBS Pricing:**
 https://aws.amazon.com/ebs/pricing/
 
