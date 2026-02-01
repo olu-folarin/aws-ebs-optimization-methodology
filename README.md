@@ -1,6 +1,6 @@
 # AWS EBS Volume Optimization Methodology
 
-> **Note:** This is a generalized, sanitized framework based on real production work that delivered £108K in annual AWS savings at UK Government scale. It reflects lessons learned and refinements made after execution, not necessarily the exact process used during the original campaign.
+> **Note:** This is a generalized, sanitized framework based on real production work that delivered significant annual AWS savings at enterprise scale. It reflects lessons learned and refinements made after execution, not necessarily the exact process used during the original campaign.
 
 ---
 
@@ -8,7 +8,7 @@
 
 A systematic approach for safely identifying and removing orphaned EBS volumes in production AWS environments, balancing cost optimization with operational safety.
 
-This methodology was developed and validated through a production cleanup campaign across a large-scale EKS environment (1,000+ namespaces, 1,289 EBS volumes analyzed).
+This methodology was developed and validated through a production cleanup campaign across a large-scale EKS environment (1,000+ namespaces, 1,000+ EBS volumes analyzed).
 
 ---
 
@@ -16,19 +16,20 @@ This methodology was developed and validated through a production cleanup campai
 
 **Direct campaign (original author):**
 - 729 volumes deleted
-- 50.9TB storage reclaimed
-- **£62,829 annual savings**
+- 50+ TB storage reclaimed
+- Significant annual savings
 - Zero production incidents
 
 **Adoption by colleague (following the campaign):**
 - 3 high-IOPS io1 volumes identified and removed
-- **£45,241 additional annual savings**
+- Additional significant annual savings
 
 **Combined organizational impact:**
 - **732 total volumes removed**
-- **£108,070 annual savings**
+- **Significant combined annual savings**
+- **Zero production incidents**
 
-**Timeline:** ~2.5 weeks (phased execution with monitoring between batches)
+**Timeline:** ~5 weeks (phased execution with monitoring between batches)
 
 ---
 
@@ -36,17 +37,16 @@ This methodology was developed and validated through a production cleanup campai
 
 During the campaign, one discovery changed everything:
 
-**A single 750GB io1 volume with 19,500 provisioned IOPS:**
+**A single 750GB io1 volume with 15,000 provisioned IOPS:**
 
-| Cost Component | Annual Cost | % of Total |
-|---|---:|---:|
-| Storage (750GB) | £1,044 | 7% |
-| IOPS (19,500) | £14,040 | 93% |
-| **Total** | **£15,084** | **100%** |
+| Cost Component | % of Total |
+|----------------|------------|
+| Storage (750GB) | ~7% |
+| IOPS (15,000) | ~93% |
 
 **Key lesson:** For io1/io2 volumes, IOPS often dominates cost while being invisible in basic volume listings. Always check provisioned IOPS when evaluating high-value volumes.
 
-This single volume represented 24% of the direct campaign savings.
+This single volume represented a significant portion of the direct campaign savings.
 
 ---
 
@@ -54,7 +54,7 @@ This single volume represented 24% of the direct campaign savings.
 
 This framework represents the refined methodology—what you should use, informed by lessons learned during production execution.
 
-### Step 1: Candidate Identification (AWS)
+### Step 1: Volume Age & IOPS Analysis (Triage)
 
 **Query unattached volumes** that have been in `available` state for 30+ days.
 
@@ -66,67 +66,84 @@ This framework represents the refined methodology—what you should use, informe
 - Tags (owner, environment, service)
 - **For io1/io2: Provisioned IOPS** (critical cost factor)
 
-**Output:** List of candidate volumes for further verification.
+**Output:** List of candidate volumes for further verification, prioritized by age and cost impact.
 
 ---
 
-### Step 2: Kubernetes PersistentVolume Check
+### Step 2: Attachment State Verification
 
-**Verify no PV references exist:**
+**Verify volume is unattached:**
+
 ```bash
-kubectl get pv <pv-name>
+aws ec2 describe-volumes --filters Name=status,Values=available
 ```
 
-- If returns "NotFound" → No Kubernetes infrastructure binding exists
-- If PV exists (even if "Released") → **Stop and investigate.** The cluster still knows about this volume.
-
-**Why this matters:** Prevents deleting volumes that workloads might expect on next deployment.
+- Status `available` means unattached
+- But unattached ≠ deletable — proceed to further verification
 
 ---
 
-### Step 3: PersistentVolumeClaim Verification
+### Step 3: Kubernetes PV/PVC Cross-Reference
 
-**Check for active claims across all namespaces:**
+**Check for PersistentVolume references:**
+
+```bash
+kubectl get pv -o json | jq '.items[] | select(.spec.awsElasticBlockStore.volumeID)'
+```
+
+**Check for PersistentVolumeClaim references:**
+
 ```bash
 kubectl get pvc --all-namespaces | grep <volume-id>
 ```
 
-- If PVC exists → Workload expects this storage. **Do not delete.**
-- If no PVC found → Proceed to next check.
+- If PV/PVC exists → Workload expects this storage. **Do not delete.**
+- If no references found → Proceed to next check.
+
+**Why this matters:** A volume might be unattached at the EC2 level but still referenced by Kubernetes. Deleting it would break the next pod that tries to mount it.
 
 ---
 
-### Step 4: Backup/Disaster Recovery Tag Assessment
+### Step 4: CloudTrail Activity Analysis
 
-**Check for backup-related tags:**
+**Check when volume was last accessed:**
+
+CloudTrail reveals the last `AttachVolume`, `DetachVolume`, or `CreateSnapshot` events.
+
+- Volumes with no activity for 6+ months are strong deletion candidates
+- Recent activity means someone's still using it, even if currently detached
+
+---
+
+### Step 5: Snapshot & AMI Pipeline Check
+
+**Check for backup-related indicators:**
+
 - Velero backup tags
 - DR/restore workflow identifiers
 - Snapshot/AMI dependencies
 - Recovery documentation references
 
-If backup-related tags exist → **Verify with team before deletion.** These volumes often look abandoned but are critical for recovery.
+Snapshots and AMIs indicate the volume is referenced by automation, launch templates, or image build pipelines. Even if the volume isn't directly backing an AMI (snapshots do that), its existence in an active workflow means deletion could break restore processes or future builds.
+
+If backup-related signals exist → **Verify with team before deletion.**
 
 ---
 
-### Step 5: Age and Cost Prioritization
+### Step 6: Tag & Naming Convention Analysis
 
-**Prioritize candidates by:**
-- Age (older = lower risk)
-- Cost (higher = higher impact)
-- Volume type (io1/io2 = check IOPS, gp2/gp3 = focus on size)
+**Check if tags or naming patterns indicate purpose:**
 
-**For high-value volumes:**
-- Conduct additional validation
-- Document decision rationale
-- Get team confirmation before deletion
+Tags like `kubernetes.io/created-for/pvc/name` or naming patterns like `prometheus-data-*` reveal original purpose. Cross-reference with current cluster state to determine if that workload still exists.
 
 ---
 
-### Step 6: Team Validation for High-Value Volumes
+### Step 7: Senior Team Validation for High-Value Volumes
 
-**For volumes with significant cost or size:**
+**For volumes >1TB or with significant cost impact:**
+
 - Schedule validation session with senior engineers
-- Walk through verification evidence
+- Walk through verification evidence for each volume
 - Allow independent verification using alternative methods
 - Delete only after consensus
 
@@ -138,17 +155,21 @@ If backup-related tags exist → **Verify with team before deletion.** These vol
 
 ---
 
-### Step 7: Phased Deletion with Monitoring
+## Phased Execution
 
-**Execute in controlled batches:**
-1. **Start small:** Delete 5-10 of the oldest, smallest volumes
-2. **Monitor:** Observe for issues (deployments, alerts, team reports)
-3. **Scale gradually:** Increase batch size as confidence grows
-4. **Continue monitoring:** Watch between batches for unexpected impacts
+Don't delete everything on day one. Use a phased approach:
+
+**Phase 1:** Start small (10 oldest, smallest volumes). 48-hour monitoring. Zero issues.
+
+**Phase 2:** Incremental batches (15 → 20 → 30 → 50 volumes), 24-48 hour monitoring windows between each.
+
+**Phase 3:** Medium-value volumes (e.g., decommissioned Prometheus volumes).
+
+**Phase 4:** High-value volumes with senior team validation.
 
 **Original campaign pattern:**
 - Started with low-value volumes (<10GB)
-- Progressed to medium-value volumes (75GB Prometheus sets)
+- Progressed to medium-value volumes
 - Finished with high-value volumes (after team validation)
 - **Production incidents: 0**
 
@@ -156,13 +177,14 @@ If backup-related tags exist → **Verify with team before deletion.** These vol
 
 ## Implementation Guidance
 
-### What to automate (Steps 1-4)
+### What to automate (Steps 1-5)
 - Volume discovery and filtering (AWS API)
 - PV/PVC cross-referencing (kubectl automation)
+- CloudTrail activity analysis
 - Tag checking and classification
 - Cost calculation and prioritization
 
-### What requires human judgment (Steps 5-7)
+### What requires human judgment (Steps 6-7)
 - High-value volume decisions
 - Backup/DR verification when tags are unclear
 - Batch sizing and timing
@@ -192,27 +214,28 @@ One-off cleanups buy time. Prevention keeps the bill clean:
 - Cost visibility dashboards (by team/namespace)
 
 ### Use policy-as-code
-- Tag enforcement at merge time (e.g., terraform-tag-validator)
+- Tag enforcement at merge time
 - Pre-deployment validation
 - Automated compliance reporting
 
 ---
 
-## Success Factors
+## Key Takeaways
 
-From the original campaign:
-
-✅ **Systematic approach beats aggressive deletion**
+✅ **Systematic beats aggressive**
 Zero incidents preserved organizational trust for future optimization work.
 
 ✅ **IOPS analysis is non-negotiable for io1/io2**
 Storage size alone misses 90%+ of cost for high-IOPS volumes.
 
 ✅ **Phased execution enables learning**
-Early batches revealed patterns (decommissioned Prometheus volumes, IOPS over-provisioning) that guided later decisions.
+Early batches revealed patterns that guided later decisions.
 
 ✅ **Team validation builds repeatability**
-Independent verification meant the methodology could be reused by others (proven by colleague's £45K savings).
+Independent verification meant the methodology could be reused by others.
+
+✅ **Automate what you've validated**
+Once you trust the methodology, bake it into your processes. Manual verification doesn't scale.
 
 ---
 
@@ -252,11 +275,5 @@ This work is licensed under [Creative Commons Attribution 4.0 International (CC 
 
 **Under the following terms:**
 - **Attribution** — Credit the original work and indicate if changes were made
-
-**How to cite:**
-```
-Oyenuga, F. (2025). AWS EBS Optimisation Methodology.
-GitHub: https://github.com/olu-folarin/aws-ebs-optimization-methodology-
-```
 
 Full license: https://creativecommons.org/licenses/by/4.0/legalcode
